@@ -32,7 +32,6 @@ def test_monte_carlo():
     print("Mean final value:", np.mean(final_vals))
     print("Min:", np.min(final_vals))
     print("Max:", np.max(final_vals))
-    import numpy as np
 
     percentiles = np.percentile(final_vals, [5, 50, 95])
     print("5th percentile:", percentiles[0])
