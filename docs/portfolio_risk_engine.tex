@@ -1,0 +1,191 @@
+\documentclass[11pt]{article}
+
+\usepackage{amsmath, amssymb}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+
+\geometry{margin=1in}
+
+\title{Portfolio Risk and Scenario Analysis Engine}
+\author{Robin Basso}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+
+This project implements a portfolio risk engine designed to evaluate the distribution of outcomes and downside risk under both normal market conditions and stress scenarios.
+
+The primary objective is to provide decision-relevant metrics for portfolio managers and family offices, focusing on capital preservation and downside risk.
+
+\section{Portfolio Model}
+
+We consider a portfolio composed of $N$ assets with weights:
+
+\[
+\mathbf{w} = (w_1, w_2, ..., w_N), \quad \sum_{i=1}^N w_i = 1
+\]
+
+Let $\mathbf{r}_t$ denote the vector of asset returns at time $t$:
+
+\[
+\mathbf{r}_t = (r_{t,1}, r_{t,2}, ..., r_{t,N})
+\]
+
+The portfolio return at time $t$ is:
+
+\[
+R_t = \mathbf{w}^\top \mathbf{r}_t
+\]
+
+The portfolio value evolves as:
+
+\[
+V_t = V_0 \prod_{s=1}^{t} (1 + R_s)
+\]
+
+\section{Stochastic Returns Model}
+
+Asset returns are modeled as a multivariate Gaussian process:
+
+\[
+\mathbf{r}_t \sim \mathcal{N}(\boldsymbol{\mu}, \boldsymbol{\Sigma})
+\]
+
+where:
+\begin{itemize}
+\item $\boldsymbol{\mu}$ is the vector of expected returns
+\item $\boldsymbol{\Sigma}$ is the covariance matrix
+\end{itemize}
+
+Correlation between assets is captured through $\boldsymbol{\Sigma}$, ensuring realistic joint behavior.
+
+\section{Monte Carlo Simulation}
+
+We simulate $M$ independent scenarios of length $T$:
+
+\[
+\{\mathbf{r}_t^{(m)}\}_{t=1}^T, \quad m = 1, ..., M
+\]
+
+For each simulation:
+\begin{enumerate}
+\item Generate asset returns from the multivariate distribution
+\item Compute portfolio returns
+\item Construct the portfolio value path
+\end{enumerate}
+
+This yields a distribution of terminal values:
+
+\[
+\{V_T^{(m)}\}_{m=1}^M
+\]
+
+\section{Risk Metrics}
+
+\subsection{Value at Risk (VaR)}
+
+Value at Risk at confidence level $\alpha$ is defined as:
+
+\[
+\text{VaR}_\alpha = V_0 - Q_{1-\alpha}(V_T)
+\]
+
+where $Q_{1-\alpha}$ is the $(1-\alpha)$ quantile of the terminal value distribution.
+
+\subsection{Conditional Value at Risk (CVaR)}
+
+Conditional VaR (Expected Shortfall) measures the expected loss beyond VaR:
+
+\[
+\text{CVaR}_\alpha = \mathbb{E}[V_0 - V_T \mid V_T \leq Q_{1-\alpha}(V_T)]
+\]
+
+\subsection{Maximum Drawdown}
+
+For a given path $\{V_t\}$, define the running maximum:
+
+\[
+M_t = \max_{s \leq t} V_s
+\]
+
+The drawdown is:
+
+\[
+D_t = \frac{M_t - V_t}{M_t}
+\]
+
+Maximum drawdown is:
+
+\[
+\text{MDD} = \max_t D_t
+\]
+
+\section{Scenario Analysis}
+
+Stress scenarios modify the return process to reflect adverse market conditions.
+
+\subsection{Equity Crash}
+
+An instantaneous shock applied at $t=0$:
+
+\[
+r_{0,\text{equity}} \rightarrow r_{0,\text{equity}} - \delta
+\]
+
+with $\delta \approx 20\%$.
+
+\subsection{Volatility Spike}
+
+Increased uncertainty is modeled by scaling returns:
+
+\[
+\mathbf{r}_t \rightarrow \lambda \mathbf{r}_t, \quad \lambda > 1
+\]
+
+\subsection{Combined Stress}
+
+A combination of shocks:
+
+\begin{itemize}
+\item Equity crash
+\item Increased volatility
+\end{itemize}
+
+\section{Interpretation}
+
+The model allows answering key portfolio questions:
+
+\begin{itemize}
+\item What is the worst expected loss at a given confidence level?
+\item How severe are losses in extreme scenarios?
+\item How does the portfolio behave under market stress?
+\end{itemize}
+
+\section{Implementation Notes}
+
+The implementation follows a modular architecture:
+
+\begin{itemize}
+\item \texttt{Portfolio}: handles portfolio aggregation
+\item \texttt{ReturnsModel}: generates stochastic returns
+\item \texttt{MonteCarloEngine}: simulates paths
+\item \texttt{RiskMetrics}: computes risk measures
+\item \texttt{Scenario}: applies stress transformations
+\end{itemize}
+
+The design emphasizes:
+\begin{itemize}
+\item clarity
+\item extensibility
+\item separation of concerns
+\end{itemize}
+
+\section{Conclusion}
+
+This project provides a practical framework for portfolio risk analysis, bridging quantitative modeling and decision-making tools for investment professionals.
+
+\end{document}
