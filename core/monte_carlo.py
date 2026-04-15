@@ -17,7 +17,8 @@ class MonteCarloEngine:
         self,
         n_steps: int,
         n_sims: int,
-        seed: int = None
+        seed: int = None,
+        scenario=None
     ) -> np.ndarray:
         """
         Simulate portfolio value paths.
@@ -33,10 +34,12 @@ class MonteCarloEngine:
 
         portfolio_paths = []
 
-        portfolio_paths = np.array([
-            self.portfolio.portfolio_path(sim)
-            for sim in asset_returns
-            ])
+        for sim in asset_returns:
+            if scenario is not None:
+                sim = scenario.apply(sim)
+                
+            path = self.portfolio.portfolio_path(sim)
+            portfolio_paths.append(path)
 
         return np.array(portfolio_paths)
 
