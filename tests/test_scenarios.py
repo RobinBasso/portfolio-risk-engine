@@ -23,12 +23,12 @@ def test_scenarios():
 
     # Scenario
     scenario = EquityCrashScenario()
-    stressed_vals = engine.simulate(
+    stressed_vals = engine.final_values(
         n_steps=50,
         n_sims=3000,
         seed=42,
         scenario=scenario
-    )[:, -1]
+    )
 
     print("\n--- Scenario Comparison ---")
     print("Base mean:", np.mean(base_vals))

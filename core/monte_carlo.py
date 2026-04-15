@@ -47,10 +47,11 @@ class MonteCarloEngine:
         self,
         n_steps: int,
         n_sims: int,
-        seed: int = None
+        seed: int = None,
+        scenario=None
     ) -> np.ndarray:
         """
         Return final portfolio values across simulations.
         """
-        paths = self.simulate(n_steps, n_sims, seed)
+        paths = self.simulate(n_steps, n_sims, seed, scenario)
         return paths[:, -1]
