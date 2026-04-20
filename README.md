@@ -6,16 +6,16 @@ A Monte Carlo-based risk analytics tool designed for portfolio managers and fami
 
 ## Key Features
 
-- **Monte Carlo simulation** of multi-asset portfolios  
-- **Correlated returns modeling** (multivariate Gaussian)  
-- **Risk metrics**:
+- Monte Carlo simulation of multi-asset portfolios  
+- Correlated returns modeling (multivariate Gaussian)  
+- Risk metrics:
   - Value at Risk (VaR)
   - Conditional VaR (CVaR)
   - Maximum Drawdown  
-- **Stress testing**:
+- Stress testing:
   - Equity market crash (-20%)
   - Volatility shocks  
-- **Interactive dashboard (Streamlit)**
+- Interactive dashboard (Streamlit)
 
 ---
 
@@ -25,11 +25,15 @@ A Monte Carlo-based risk analytics tool designed for portfolio managers and fami
 - CVaR (95%): €109,241  
 - Scenario loss (equity crash): ~€122k on €1M portfolio  
 
+## Dashboard Preview
+
+![Dashboard](docs/dashboard.pdf)
+
 ---
 
 ## Motivation
 
-This project focuses on **practical portfolio risk management**, emphasizing:
+This project focuses on practical portfolio risk management, emphasizing:
 
 - downside protection  
 - scenario-based analysis  
@@ -43,12 +47,14 @@ Designed with real-world use cases in mind for:
 ---
 
 ## Project Structure
-core/ # portfolio logic, simulation, risk metrics
-scenarios/ # stress scenarios
-app/ # Streamlit dashboard
-tests/ # unit tests
-docs/ # LaTeX technical documentation
 
+```
+core/        # portfolio logic, simulation, risk metrics  
+scenarios/   # stress scenarios  
+app/         # Streamlit dashboard  
+tests/       # unit tests  
+docs/        # LaTeX technical documentation  
+```
 
 ---
 
@@ -59,10 +65,34 @@ pip install -r requirements.txt
 PYTHONPATH=. streamlit run app/dashboard.py
 ```
 
+---
+
 ## Documentation
 
 A full mathematical and technical description is available in:
 
-```bash
+```
 docs/portfolio_risk_engine.tex
 ```
+
+---
+
+## Tech Stack
+
+- Python  
+- NumPy  
+- Streamlit  
+- Matplotlib  
+
+---
+
+## Author
+
+Robin Basso  
+PhD in Fluid Mechanics | Quantitative Developer
+
+---
+
+## Note
+
+This project is designed as a decision-support tool, not a trading system.
