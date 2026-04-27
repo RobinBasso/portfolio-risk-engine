@@ -1,191 +1,647 @@
-\documentclass[11pt]{article}
+\documentclass[12pt, a4paper]{article}
 
-\usepackage{amsmath, amssymb}
-\usepackage{geometry}
-\usepackage{graphicx}
+% --- Packages ---
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{bm}
+\usepackage{hyperref}
 \usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{titlesec}
+\usepackage{parskip}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{caption}
+\usepackage{float}
 
-\geometry{margin=1in}
+% --- Colors ---
+\definecolor{codeblue}{RGB}{0, 80, 160}
+\definecolor{codegray}{RGB}{245, 245, 245}
+\definecolor{commentgreen}{RGB}{0, 128, 0}
+\definecolor{keywordred}{RGB}{160, 0, 0}
 
-\title{Portfolio Risk and Scenario Analysis Engine}
-\author{Robin Basso}
+% --- Code style ---
+\lstdefinestyle{pythonstyle}{
+    backgroundcolor=\color{codegray},
+    commentstyle=\color{commentgreen}\itshape,
+    keywordstyle=\color{keywordred}\bfseries,
+    numberstyle=\tiny\color{gray},
+    stringstyle=\color{codeblue},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    captionpos=b,
+    numbers=left,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    language=Python,
+    frame=single,
+    rulecolor=\color{gray!40},
+    xleftmargin=1em,
+    framexleftmargin=1em,
+}
+\lstset{style=pythonstyle}
+
+% --- Header / Footer ---
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{Portfolio Risk \& Scenario Engine}
+\lhead{Mathematical Reference}
+\cfoot{\thepage}
+
+% --- Theorem environments ---
+\newtheorem{definition}{Definition}[section]
+\newtheorem{remark}{Remark}[section]
+
+% --- Title ---
+\title{
+    \vspace{-1cm}
+    \textbf{\Large Portfolio Risk \& Scenario Engine} \\[0.4em]
+    \large Mathematical Documentation \\[0.2em]
+    \normalsize A detailed exposition of all computations implemented in the codebase
+}
+\author{RobinBasso}
 \date{\today}
 
+% ============================================================
 \begin{document}
+% ============================================================
 
 \maketitle
+\thispagestyle{fancy}
 
-\section{Introduction}
+\begin{abstract}
+This document provides a rigorous mathematical description of every computation
+performed in the \texttt{portfolio-risk-engine} project. The engine is a
+Python-based framework for simulating multi-asset portfolio dynamics and
+measuring risk under both normal and stressed market conditions. The four core
+modules --- \texttt{portfolio.py}, \texttt{returns\_model.py},
+\texttt{monte\_carlo.py}, and \texttt{risk\_metrics.py} --- are covered in full
+detail, followed by the scenario framework defined in \texttt{stress\_scenarios.py}.
+All formulae are derived from the source code and correspond exactly to the
+implemented algorithms.
+\end{abstract}
 
-This project implements a portfolio risk engine designed to evaluate the distribution of outcomes and downside risk under both normal market conditions and stress scenarios.
+\tableofcontents
+\newpage
 
-The primary objective is to provide decision-relevant metrics for portfolio managers and family offices, focusing on capital preservation and downside risk.
+% ============================================================
+\section{Notation and Conventions}
+% ============================================================
 
-\section{Portfolio Model}
+Throughout this document we adopt the following notation.
 
-We consider a portfolio composed of $N$ assets with weights:
+\begin{center}
+\begin{tabular}{cl}
+\toprule
+\textbf{Symbol} & \textbf{Meaning} \\
+\midrule
+$N$ & Number of assets in the portfolio \\
+$\bm{w} \in \mathbb{R}^N$ & Portfolio weight vector \\
+$V_0$ & Initial portfolio value (default: 1\,000\,000\,€) \\
+$T$ & Number of time steps (\texttt{n\_steps}) \\
+$M$ & Number of simulation paths (\texttt{n\_sims}) \\
+$\bm{\mu} \in \mathbb{R}^N$ & Vector of per-step expected returns \\
+$\bm{\Sigma} \in \mathbb{R}^{N \times N}$ & Covariance matrix of per-step returns \\
+$\bm{r}_t \in \mathbb{R}^N$ & Vector of asset returns at time step $t$ \\
+$R_t$ & Scalar portfolio return at time step $t$ \\
+$V_t$ & Portfolio value at time step $t$ \\
+$\alpha$ & Confidence level for risk metrics (e.g.\ 0.95) \\
+\bottomrule
+\end{tabular}
+\end{center}
 
+All returns in this engine are \textbf{simple (arithmetic) returns}, not
+log-returns. Time steps are abstract and dimensionless; they can represent days,
+weeks, or any other period depending on how $\bm{\mu}$ and $\bm{\Sigma}$ are
+calibrated.
+
+% ============================================================
+\section{Portfolio Representation (\texttt{portfolio.py})}
+% ============================================================
+
+\subsection{Structure}
+
+A portfolio is fully characterised by the triple $(N, \bm{w}, V_0)$ where
 \[
-\mathbf{w} = (w_1, w_2, ..., w_N), \quad \sum_{i=1}^N w_i = 1
+    \bm{w} = (w_1, w_2, \ldots, w_N)^\top, \qquad
+    \sum_{i=1}^{N} w_i = 1, \qquad w_i \geq 0 \;\; \forall\, i.
 \]
+The two constraints --- full investment and no short-selling --- are enforced at
+construction time via \texttt{\_validate\_inputs()}.
 
-Let $\mathbf{r}_t$ denote the vector of asset returns at time $t$:
+\subsection{Single-Step Portfolio Return}
 
-\[
-\mathbf{r}_t = (r_{t,1}, r_{t,2}, ..., r_{t,N})
-\]
+Given asset returns $\bm{r}_t = (r_{t,1}, \ldots, r_{t,N})^\top$ at a single
+time step $t$, the portfolio return is the weighted inner product:
+\begin{equation}
+    \boxed{R_t = \bm{w}^\top \bm{r}_t = \sum_{i=1}^{N} w_i \, r_{t,i}}
+    \label{eq:portfolio_return}
+\end{equation}
+This is implemented in \texttt{portfolio\_return} as \texttt{np.dot(weights,
+asset\_returns)}.
 
-The portfolio return at time $t$ is:
+\subsection{Portfolio Value Path}
 
-\[
-R_t = \mathbf{w}^\top \mathbf{r}_t
-\]
+Let $\mathbf{R} \in \mathbb{R}^{T \times N}$ be the returns matrix over $T$
+steps, where the $t$-th row is $\bm{r}_t^\top$. The scalar portfolio return at
+each step is:
+\begin{equation}
+    R_t = \mathbf{R}[t, :] \cdot \bm{w}, \qquad t = 1, \ldots, T.
+\end{equation}
+In matrix notation this is simply $\bm{R}_{\text{port}} = \mathbf{R}\,\bm{w}
+\in \mathbb{R}^T$.
 
-The portfolio value evolves as:
+The portfolio \textbf{value} at time $t$ is computed via the cumulative product
+of gross returns, starting from the initial value $V_0$:
+\begin{equation}
+    \boxed{V_t = V_0 \prod_{s=1}^{t}(1 + R_s)}
+    \label{eq:portfolio_path}
+\end{equation}
+This is the standard compounding formula for arithmetic returns and is
+implemented as:
+\begin{lstlisting}
+portfolio_returns = returns_matrix @ self.weights
+return self.initial_value * np.cumprod(1 + portfolio_returns)
+\end{lstlisting}
+The output array has shape $(T,)$ and contains $[V_1, V_2, \ldots, V_T]$.
 
-\[
-V_t = V_0 \prod_{s=1}^{t} (1 + R_s)
-\]
+\begin{remark}
+    The use of \texttt{np.cumprod} over $(1 + R_t)$ is equivalent to the
+    discrete-time wealth process. For small returns $R_t \ll 1$, this
+    approximates geometric Brownian motion. There is no log-transform applied;
+    the model operates in the linear return space.
+\end{remark}
 
-\section{Stochastic Returns Model}
+% ============================================================
+\section{Multivariate Returns Model (\texttt{returns\_model.py})}
+% ============================================================
 
-Asset returns are modeled as a multivariate Gaussian process:
+\subsection{Model Specification}
 
-\[
-\mathbf{r}_t \sim \mathcal{N}(\boldsymbol{\mu}, \boldsymbol{\Sigma})
-\]
-
-where:
-\begin{itemize}
-\item $\boldsymbol{\mu}$ is the vector of expected returns
-\item $\boldsymbol{\Sigma}$ is the covariance matrix
+The engine models asset returns using a \textbf{multivariate Gaussian (normal)
+distribution}:
+\begin{equation}
+    \boxed{\bm{r}_t \sim \mathcal{N}(\bm{\mu},\, \bm{\Sigma})}
+    \label{eq:returns_model}
+\end{equation}
+where the same distribution is applied i.i.d.\ at every time step. This implies:
+\begin{itemize}[noitemsep]
+    \item Returns are serially uncorrelated.
+    \item The marginal return of asset $i$ has mean $\mu_i$ and variance $\Sigma_{ii}$.
+    \item The co-movement between assets $i$ and $j$ is captured by $\Sigma_{ij}$.
 \end{itemize}
 
-Correlation between assets is captured through $\boldsymbol{\Sigma}$, ensuring realistic joint behavior.
+\subsection{Covariance Matrix Validation}
 
-\section{Monte Carlo Simulation}
+The constructor enforces two structural conditions on $\bm{\Sigma}$:
+\begin{enumerate}[noitemsep]
+    \item \textbf{Squareness:} $\bm{\Sigma} \in \mathbb{R}^{N \times N}$.
+    \item \textbf{Symmetry:} $\bm{\Sigma} = \bm{\Sigma}^\top$ (checked via
+          \texttt{np.allclose}).
+\end{enumerate}
+Positive semi-definiteness is not explicitly checked in the code but is
+implicitly required for \texttt{np.random.multivariate\_normal} to produce
+valid samples.
 
-We simulate $M$ independent scenarios of length $T$:
+\subsection{Simulation Algorithm}
 
+For $M$ paths and $T$ steps, the simulation draws:
+\begin{equation}
+    \bm{r}^{(m)}_t \overset{\text{i.i.d.}}{\sim} \mathcal{N}(\bm{\mu},\,\bm{\Sigma}),
+    \qquad m = 1,\ldots,M, \quad t = 1,\ldots,T.
+\end{equation}
+The output has shape $(M, T, N)$: $M$ simulations, each containing $T$ rows of
+$N$-dimensional return vectors. This is a single call to NumPy's
+\texttt{multivariate\_normal} with \texttt{size=(n\_sims, n\_steps)}, which
+internally uses the Cholesky decomposition $\bm{\Sigma} = \bm{L}\bm{L}^\top$
+and transforms standard normal draws:
+\begin{equation}
+    \bm{r}_t = \bm{\mu} + \bm{L}\, \bm{z}_t, \qquad \bm{z}_t \sim \mathcal{N}(\bm{0}, \bm{I}_N).
+\end{equation}
+
+\subsection{Default Calibration (from tests and dashboard)}
+
+The project uses the following default parameters throughout:
 \[
-\{\mathbf{r}_t^{(m)}\}_{t=1}^T, \quad m = 1, ..., M
+    \bm{\mu} = \begin{pmatrix} 0.0005 \\ 0.0002 \end{pmatrix}, \qquad
+    \bm{\Sigma} = \begin{pmatrix} 0.0001 & 0.00002 \\ 0.00002 & 0.00008 \end{pmatrix}.
 \]
+These correspond to a two-asset portfolio (Equity and Bonds). The implied
+per-step standard deviations are $\sigma_{\text{Eq}} = 0.01$ (1\%) and
+$\sigma_{\text{Bd}} = 0.00894$ (0.894\%), with a correlation of:
+\begin{equation}
+    \rho_{\text{Eq,Bd}} = \frac{\Sigma_{12}}{\sqrt{\Sigma_{11}\,\Sigma_{22}}}
+    = \frac{0.00002}{\sqrt{0.0001 \times 0.00008}}
+    = \frac{0.00002}{0.00002\sqrt{2}}
+    = \frac{1}{\sqrt{2}} \approx 0.707.
+\end{equation}
 
-For each simulation:
+% ============================================================
+\section{Monte Carlo Engine (\texttt{monte\_carlo.py})}
+% ============================================================
+
+\subsection{Overview}
+
+The \texttt{MonteCarloEngine} orchestrates the full simulation pipeline. It
+combines the \texttt{ReturnsModel} and \texttt{Portfolio} objects to produce an
+ensemble of portfolio value paths.
+
+\subsection{Path Simulation}
+
+For each simulation $m \in \{1, \ldots, M\}$:
 \begin{enumerate}
-\item Generate asset returns from the multivariate distribution
-\item Compute portfolio returns
-\item Construct the portfolio value path
+    \item Draw an $(T \times N)$ matrix of asset returns
+          $\mathbf{R}^{(m)}$ from \texttt{returns\_model.simulate()}.
+    \item (Optionally) apply a scenario transformation: $\mathbf{R}^{(m)}
+          \leftarrow \mathcal{S}(\mathbf{R}^{(m)})$ (see Section~\ref{sec:scenarios}).
+    \item Compute the portfolio value path using equation~\eqref{eq:portfolio_path}:
+          \[
+            V^{(m)}_t = V_0 \prod_{s=1}^{t}(1 + \bm{w}^\top\bm{r}^{(m)}_s),
+            \qquad t = 1,\ldots,T.
+          \]
 \end{enumerate}
 
-This yields a distribution of terminal values:
+The full output is the matrix $\mathbf{V} \in \mathbb{R}^{M \times T}$, where
+entry $(m, t)$ is the portfolio value of path $m$ at time step $t$.
 
-\[
-\{V_T^{(m)}\}_{m=1}^M
-\]
+\subsection{Final Value Distribution}
 
-\section{Risk Metrics}
+The method \texttt{final\_values} extracts the terminal column:
+\begin{equation}
+    \boxed{\widetilde{V}^{(m)} = V^{(m)}_T = V_0 \prod_{t=1}^{T}(1 + R^{(m)}_t),
+    \qquad m = 1,\ldots,M.}
+\end{equation}
+This yields a sample $\{\widetilde{V}^{(1)}, \ldots, \widetilde{V}^{(M)}\}$
+from the distribution of terminal portfolio wealth, which is then used to
+compute risk metrics.
+
+\begin{remark}
+    Reproducibility is guaranteed via \texttt{np.random.seed(seed)} before
+    sampling. The default seed used throughout the test suite is 42.
+\end{remark}
+
+% ============================================================
+\section{Risk Metrics (\texttt{risk\_metrics.py})}
+% ============================================================
+
+All risk metrics are computed from the empirical distribution of terminal
+portfolio values $\{\widetilde{V}^{(m)}\}_{m=1}^{M}$.
 
 \subsection{Value at Risk (VaR)}
 
-Value at Risk at confidence level $\alpha$ is defined as:
+\begin{definition}[Value at Risk]
+    For a confidence level $\alpha \in (0, 1)$, the \textbf{Value at Risk}
+    $\mathrm{VaR}_\alpha$ is the minimum loss not exceeded with probability
+    $\alpha$. Equivalently, it is the loss exceeded with probability $1-\alpha$.
+\end{definition}
 
+The implementation approximates the initial value by the empirical mean of the
+terminal distribution:
+\begin{equation}
+    \hat{V}_0 = \frac{1}{M}\sum_{m=1}^{M}\widetilde{V}^{(m)}.
+\end{equation}
+The VaR is then computed as the gap between this mean and the
+$(1-\alpha)$-quantile of the terminal distribution:
+\begin{equation}
+    \boxed{\mathrm{VaR}_\alpha = \hat{V}_0 - q_{1-\alpha}\!\left(\{\widetilde{V}^{(m)}\}\right)}
+    \label{eq:var}
+\end{equation}
+where $q_p(\cdot)$ denotes the $p$-th percentile. For $\alpha = 0.95$, this
+extracts the 5th percentile of terminal values:
 \[
-\text{VaR}_\alpha = V_0 - Q_{1-\alpha}(V_T)
+    \mathrm{VaR}_{0.95} = \hat{V}_0 - q_{0.05}\!\left(\{\widetilde{V}^{(m)}\}\right).
 \]
+Implemented as:
+\begin{lstlisting}
+initial_value = np.mean(final_values)
+percentile = np.percentile(final_values, (1 - alpha) * 100)
+return initial_value - percentile
+\end{lstlisting}
 
-where $Q_{1-\alpha}$ is the $(1-\alpha)$ quantile of the terminal value distribution.
+\begin{remark}
+    Using $\hat{V}_0 = \mathbb{E}[\widetilde{V}]$ rather than the true initial
+    value $V_0$ is an approximation. For positively drifted processes ($\mu > 0$),
+    $\hat{V}_0 > V_0$, which slightly inflates the reported VaR. A more standard
+    convention would use $V_0$ directly.
+\end{remark}
 
-\subsection{Conditional Value at Risk (CVaR)}
+\subsection{Conditional Value at Risk (CVaR / Expected Shortfall)}
 
-Conditional VaR (Expected Shortfall) measures the expected loss beyond VaR:
+\begin{definition}[Conditional Value at Risk]
+    The \textbf{CVaR} at level $\alpha$ (also called \emph{Expected Shortfall})
+    is the expected loss conditional on the loss exceeding $\mathrm{VaR}_\alpha$:
+    \[
+        \mathrm{CVaR}_\alpha = \mathbb{E}\!\left[\text{Loss} \mid \text{Loss} \geq \mathrm{VaR}_\alpha\right].
+    \]
+\end{definition}
 
+Let $q^* = q_{1-\alpha}(\{\widetilde{V}^{(m)}\})$ be the VaR threshold. The
+tail set is:
 \[
-\text{CVaR}_\alpha = \mathbb{E}[V_0 - V_T \mid V_T \leq Q_{1-\alpha}(V_T)]
+    \mathcal{T} = \left\{m : \widetilde{V}^{(m)} \leq q^*\right\}.
 \]
+The CVaR is computed as the mean loss in this tail:
+\begin{equation}
+    \boxed{\mathrm{CVaR}_\alpha = \frac{1}{|\mathcal{T}|}\sum_{m \in \mathcal{T}}
+    \left(\hat{V}_0 - \widetilde{V}^{(m)}\right)}
+    \label{eq:cvar}
+\end{equation}
+Implemented as:
+\begin{lstlisting}
+var_threshold = np.percentile(final_values, (1 - alpha) * 100)
+tail_losses   = final_values[final_values <= var_threshold]
+return np.mean(np.mean(final_values) - tail_losses)
+\end{lstlisting}
+
+CVaR is a \textbf{coherent risk measure} (Artzner et al., 1999), satisfying
+sub-additivity, monotonicity, positive homogeneity, and translation invariance.
+It is always at least as large as $\mathrm{VaR}_\alpha$ by construction:
+$\mathrm{CVaR}_\alpha \geq \mathrm{VaR}_\alpha$.
 
 \subsection{Maximum Drawdown}
 
-For a given path $\{V_t\}$, define the running maximum:
+\begin{definition}[Maximum Drawdown]
+    Given a portfolio value path $(V_1, V_2, \ldots, V_T)$, the
+    \textbf{maximum drawdown} is:
+    \[
+        \mathrm{MDD} = \max_{t \in \{1,\ldots,T\}} \frac{\max_{s \leq t} V_s - V_t}
+                    {\max_{s \leq t} V_s}.
+    \]
+\end{definition}
 
+This measures the largest peak-to-trough decline as a proportion of the running
+peak. The implementation computes:
+\begin{equation}
+    \boxed{\mathrm{MDD} = \max_{t}\,\frac{\mathrm{Peak}_t - V_t}{\mathrm{Peak}_t}}
+    \label{eq:mdd}
+\end{equation}
+where $\mathrm{Peak}_t = \max_{s \leq t} V_s$ is the running maximum, obtained
+via \texttt{np.maximum.accumulate(path)}:
+\begin{lstlisting}
+peak      = np.maximum.accumulate(path)
+drawdowns = (peak - path) / peak
+return np.max(drawdowns)
+\end{lstlisting}
+
+\begin{remark}
+    MDD is computed on a \emph{single} simulation path (shape $(T,)$), not on
+    the terminal distribution. In \texttt{test\_risk\_metrics.py}, it is applied
+    to the first path of a 1-simulation run.
+\end{remark}
+
+% ============================================================
+\section{Stress Testing Framework (\texttt{scenarios/})}
+% ============================================================
+\label{sec:scenarios}
+
+\subsection{Design Pattern}
+
+The scenario framework uses a \textbf{Strategy design pattern}. The abstract
+base class \texttt{Scenario} (in \texttt{base.py}) defines a single interface
+method:
 \[
-M_t = \max_{s \leq t} V_s
+    \mathcal{S}: \mathbb{R}^{T \times N} \to \mathbb{R}^{T \times N},
+    \qquad \mathbf{R} \mapsto \mathcal{S}(\mathbf{R}).
+\]
+Concrete scenarios override \texttt{apply(returns)} to perturb the simulated
+return matrix before it is passed to the portfolio compounding step.
+
+\subsection{Equity Crash Scenario (\texttt{EquityCrashScenario})}
+
+An instantaneous additive shock is applied to the equity asset (asset index 0)
+at the first time step only:
+\begin{equation}
+    \boxed{\widetilde{r}^{(m)}_{1,0} = r^{(m)}_{1,0} + \delta, \qquad \delta = -0.2}
+    \label{eq:equity_crash}
+\end{equation}
+with all other steps and assets unchanged:
+\[
+    \widetilde{r}^{(m)}_{t,i} = r^{(m)}_{t,i} \quad \text{for } (t,i) \neq (1,0).
+\]
+The parameter $\delta = -0.2$ corresponds to an instantaneous \textbf{20\% crash}
+in the equity position at $t=1$. In code:
+\begin{lstlisting}
+shocked[0, 0] += self.crash_size   # crash_size = -0.2 by default
+\end{lstlisting}
+The impact on portfolio value after one step is:
+\[
+    V^{\text{stressed}}_1 = V_0\bigl(1 + w_{\text{Eq}}(\mu_{\text{Eq}} + \delta)
+    + w_{\text{Bd}}\,r_{1,\text{Bd}}\bigr).
+\]
+With the default weights $(w_{\text{Eq}}, w_{\text{Bd}}) = (0.6, 0.4)$ and
+$\delta = -0.2$, the first-step equity contribution drops by
+$0.6 \times 0.2 = 0.12$, i.e.\ a 12\% instantaneous portfolio loss.
+
+\subsection{Volatility Spike Scenario (\texttt{VolatilitySpikeScenario})}
+
+All returns across all time steps and all assets are scaled by a constant factor
+$\lambda > 1$:
+\begin{equation}
+    \boxed{\widetilde{\mathbf{R}}^{(m)} = \lambda \cdot \mathbf{R}^{(m)}}
+    \label{eq:vol_spike}
+\end{equation}
+The default factor is $\lambda = 2$. This multiplicative scaling has the
+following effect on the moments of the portfolio return distribution:
+\begin{align}
+    \mathbb{E}[\widetilde{R}_t] &= \lambda\,\mathbb{E}[R_t] = \lambda\,\bm{w}^\top\bm{\mu}, \\
+    \mathrm{Var}[\widetilde{R}_t] &= \lambda^2\,\mathrm{Var}[R_t]
+        = \lambda^2\,\bm{w}^\top\bm{\Sigma}\bm{w}.
+\end{align}
+Thus volatility (standard deviation) is multiplied by $\lambda$, while expected
+return is also scaled. This is a \textit{symmetric} stress: both upside and
+downside paths are amplified equally.
+
+\subsection{Combined Stress Scenario (\texttt{CombinedStressScenario})}
+
+This scenario applies both an equity crash and a volatility spike
+sequentially:
+\begin{equation}
+    \widetilde{\mathbf{R}}^{(m)} = \lambda \cdot \mathcal{S}_{\text{crash}}(\mathbf{R}^{(m)}),
+    \qquad \lambda = 1.5,\;\; \delta = -0.2.
+\end{equation}
+Explicitly:
+\begin{equation}
+    \boxed{\widetilde{r}^{(m)}_{t,i} =
+    \begin{cases}
+        1.5\,(r^{(m)}_{1,0} - 0.2) & \text{if } t = 1,\, i = 0 \\
+        1.5\, r^{(m)}_{t,i}         & \text{otherwise}
+    \end{cases}}
+    \label{eq:combined_stress}
+\end{equation}
+In code:
+\begin{lstlisting}
+shocked[0, 0] -= 0.2   # equity crash at t=0
+shocked *= 1.5          # scale all returns
+\end{lstlisting}
+
+\begin{remark}
+    The ordering matters: the crash shock is applied \emph{before} the scaling,
+    so the crash magnitude itself is also amplified. The effective first-step
+    equity shock becomes $1.5 \times (-0.2) = -0.30$, i.e.\ a 30\% crash on
+    the equity position at $t=1$.
+\end{remark}
+
+% ============================================================
+\section{End-to-End Computational Pipeline}
+% ============================================================
+
+The full computation performed for a single simulation run can be summarised
+as follows. Let $M$ be the number of paths, $T$ the number of steps, $N$ the
+number of assets.
+
+\bigskip
+\noindent\textbf{Step 1 — Asset return sampling.}
+\[
+    \mathbf{R}^{(m)} \sim \mathcal{N}_{T \times N}(\bm{1}_T \bm{\mu}^\top,\,\bm{\Sigma}),
+    \quad m = 1, \ldots, M.
 \]
 
-The drawdown is:
-
+\noindent\textbf{Step 2 — Scenario perturbation (optional).}
 \[
-D_t = \frac{M_t - V_t}{M_t}
+    \mathbf{R}^{(m)} \leftarrow \mathcal{S}(\mathbf{R}^{(m)}).
 \]
 
-Maximum drawdown is:
-
+\noindent\textbf{Step 3 — Scalar portfolio returns.}
 \[
-\text{MDD} = \max_t D_t
+    \bm{R}^{(m)}_{\text{port}} = \mathbf{R}^{(m)} \bm{w} \in \mathbb{R}^T.
 \]
 
-\section{Scenario Analysis}
-
-Stress scenarios modify the return process to reflect adverse market conditions.
-
-\subsection{Equity Crash}
-
-An instantaneous shock applied at $t=0$:
-
+\noindent\textbf{Step 4 — Portfolio value paths.}
 \[
-r_{0,\text{equity}} \rightarrow r_{0,\text{equity}} - \delta
+    V^{(m)}_t = V_0 \prod_{s=1}^{t}(1 + R^{(m)}_{\text{port},s}), \quad t = 1,\ldots,T.
 \]
 
-with $\delta \approx 20\%$.
-
-\subsection{Volatility Spike}
-
-Increased uncertainty is modeled by scaling returns:
-
+\noindent\textbf{Step 5 — Terminal value extraction.}
 \[
-\mathbf{r}_t \rightarrow \lambda \mathbf{r}_t, \quad \lambda > 1
+    \widetilde{V}^{(m)} = V^{(m)}_T, \quad m = 1,\ldots,M.
 \]
 
-\subsection{Combined Stress}
+\noindent\textbf{Step 6 — Risk metrics computation.}
+\begin{align*}
+    \hat{V}_0 &= \frac{1}{M}\sum_{m=1}^{M}\widetilde{V}^{(m)}, \\
+    \mathrm{VaR}_\alpha &= \hat{V}_0 - q_{1-\alpha}(\{\widetilde{V}^{(m)}\}), \\
+    \mathrm{CVaR}_\alpha &= \hat{V}_0 - \frac{1}{|\mathcal{T}|}\sum_{m \in \mathcal{T}}\widetilde{V}^{(m)},
+    \quad \mathcal{T} = \{m : \widetilde{V}^{(m)} \leq q_{1-\alpha}\}.
+\end{align*}
 
-A combination of shocks:
+% ============================================================
+\section{Portfolio Return Distribution: Analytical Properties}
+% ============================================================
 
-\begin{itemize}
-\item Equity crash
-\item Increased volatility
+Under the Gaussian returns model, the single-step portfolio return $R_t =
+\bm{w}^\top\bm{r}_t$ is itself Gaussian:
+\begin{equation}
+    R_t \sim \mathcal{N}\!\left(\mu_p,\, \sigma_p^2\right),
+\end{equation}
+where:
+\begin{equation}
+    \mu_p = \bm{w}^\top\bm{\mu}, \qquad \sigma_p^2 = \bm{w}^\top\bm{\Sigma}\bm{w}.
+    \label{eq:port_moments}
+\end{equation}
+
+For the default parameterisation with $\bm{w} = (0.6, 0.4)^\top$:
+\begin{align}
+    \mu_p &= 0.6 \times 0.0005 + 0.4 \times 0.0002 = 0.000380, \\
+    \sigma_p^2 &= (0.6)^2 \times 0.0001
+              + 2 \times 0.6 \times 0.4 \times 0.00002
+              + (0.4)^2 \times 0.00008 \notag \\
+              &= 0.000036 + 0.0000096 + 0.0000128 = 0.0000584, \\
+    \sigma_p &\approx 0.00764.
+\end{align}
+
+The terminal portfolio value $V_T = V_0\prod_{t=1}^T(1+R_t)$ is the product of
+$T$ i.i.d.\ random variables. For large $T$ and small returns, this
+approximates a \textbf{log-normal distribution} by the central limit theorem
+applied to log-returns:
+\[
+    \log V_T \approx \log V_0 + T\!\left(\mu_p - \tfrac{1}{2}\sigma_p^2\right)
+    + \sigma_p\sqrt{T}\,Z, \quad Z \sim \mathcal{N}(0,1).
+\]
+The empirical histogram plotted in the Streamlit dashboard reflects this
+approximately log-normal shape.
+
+% ============================================================
+\section{Module Architecture Summary}
+% ============================================================
+
+\begin{table}[H]
+\centering
+\caption{Summary of modules and their mathematical roles}
+\begin{tabular}{llp{8cm}}
+\toprule
+\textbf{Module} & \textbf{Class / Method} & \textbf{Mathematical Operation} \\
+\midrule
+\texttt{portfolio.py} & \texttt{portfolio\_return} & $R_t = \bm{w}^\top\bm{r}_t$ \\
+& \texttt{portfolio\_path} & $V_t = V_0\prod_{s\leq t}(1+R_s)$ \\
+\midrule
+\texttt{returns\_model.py} & \texttt{simulate} & $\bm{r}_t \sim \mathcal{N}(\bm{\mu}, \bm{\Sigma})$ \\
+\midrule
+\texttt{monte\_carlo.py} & \texttt{simulate} & Full path ensemble $\mathbf{V} \in \mathbb{R}^{M\times T}$ \\
+& \texttt{final\_values} & Terminal slice $\widetilde{V}^{(m)} = V^{(m)}_T$ \\
+\midrule
+\texttt{risk\_metrics.py} & \texttt{var} & $\hat{V}_0 - q_{1-\alpha}$ \\
+& \texttt{cvar} & Mean loss in tail $\mathcal{T}$ \\
+& \texttt{max\_drawdown} & $\max_t (\mathrm{Peak}_t - V_t)/\mathrm{Peak}_t$ \\
+\midrule
+\texttt{stress\_scenarios.py} & \texttt{EquityCrashScenario} & $r_{1,0} \mathrel{+}= \delta$ \\
+& \texttt{VolatilitySpikeScenario} & $\mathbf{R} \leftarrow \lambda \mathbf{R}$ \\
+& \texttt{CombinedStressScenario} & Crash then scale \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ============================================================
+\section{Limitations and Potential Extensions}
+% ============================================================
+
+The current implementation makes several simplifying assumptions worth noting:
+
+\begin{enumerate}
+    \item \textbf{Gaussian returns.} The model does not capture fat tails,
+          skewness, or volatility clustering (e.g.\ GARCH effects). Real asset
+          returns exhibit kurtosis significantly greater than 3.
+
+    \item \textbf{Fixed weights.} The portfolio is assumed to be statically
+          allocated with no rebalancing. Dynamic strategies (momentum,
+          mean-reversion) are not modelled.
+
+    \item \textbf{I.i.d.\ steps.} Returns are independent across time steps.
+          Serial correlation and regime-switching are absent.
+
+    \item \textbf{VaR approximation.} Using $\hat{V}_0 = \mathbb{E}[\widetilde{V}]$
+          rather than the true $V_0$ introduces a small upward bias in all risk
+          metrics.
+
+    \item \textbf{Scenario scope.} Stress scenarios modify only the simulated
+          return matrix rather than recalibrating $\bm{\mu}$ and $\bm{\Sigma}$,
+          which is a reduced-form rather than structural approach.
+
+    \item \textbf{No discounting.} All values are nominal; there is no risk-free
+          rate or discounting applied to future cash flows.
+\end{enumerate}
+
+Natural extensions would include: Student-$t$ copulas for fat-tailed dependence,
+GARCH(1,1) volatility dynamics, Cholesky-based correlation shocks for
+multi-factor stress scenarios, and CVaR-based portfolio optimisation.
+
+% ============================================================
+\section*{References}
+% ============================================================
+
+\begin{itemize}[noitemsep]
+    \item Artzner, P., Delbaen, F., Eber, J.-M., \& Heath, D. (1999).
+          \textit{Coherent measures of risk}. Mathematical Finance, 9(3), 203--228.
+    \item McNeil, A.J., Frey, R., \& Embrechts, P. (2015).
+          \textit{Quantitative Risk Management: Concepts, Techniques and Tools}
+          (Revised ed.). Princeton University Press.
+    \item Glasserman, P. (2004).
+          \textit{Monte Carlo Methods in Financial Engineering}. Springer.
+    \item Rannacher, R. (1984). Finite element solution of diffusion problems
+          with irregular data. \textit{Numerische Mathematik}, 43, 309--327.
 \end{itemize}
-
-\section{Interpretation}
-
-The model allows answering key portfolio questions:
-
-\begin{itemize}
-\item What is the worst expected loss at a given confidence level?
-\item How severe are losses in extreme scenarios?
-\item How does the portfolio behave under market stress?
-\end{itemize}
-
-\section{Implementation Notes}
-
-The implementation follows a modular architecture:
-
-\begin{itemize}
-\item \texttt{Portfolio}: handles portfolio aggregation
-\item \texttt{ReturnsModel}: generates stochastic returns
-\item \texttt{MonteCarloEngine}: simulates paths
-\item \texttt{RiskMetrics}: computes risk measures
-\item \texttt{Scenario}: applies stress transformations
-\end{itemize}
-
-The design emphasizes:
-\begin{itemize}
-\item clarity
-\item extensibility
-\item separation of concerns
-\end{itemize}
-
-\section{Conclusion}
-
-This project provides a practical framework for portfolio risk analysis, bridging quantitative modeling and decision-making tools for investment professionals.
 
 \end{document}

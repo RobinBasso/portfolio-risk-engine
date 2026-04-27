@@ -27,7 +27,7 @@ A Monte Carlo-based risk analytics tool designed for portfolio managers and fami
 
 ## Dashboard Preview
 
-![Dashboard](docs/dashboard.pdf)
+![Dashboard](docs/dashboard.png)
 
 ---
 
